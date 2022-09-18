@@ -1,5 +1,5 @@
 import subprocess
-from typing import Optional
+from typing import List
 from dataclasses import dataclass
 
 SWIFTLINT_APP = "/usr/local/bin/swiftlint"
@@ -7,43 +7,58 @@ SWIFTLINT_APP = "/usr/local/bin/swiftlint"
 
 def main():
     output = subprocess.getoutput(f"{SWIFTLINT_APP}")
-
-    result = output.splitlines()[-1].strip()
-    swiftlint_result = SwiftlintResult.from_swiftlint_result(result=result)
-
-    if swiftlint_result.serious is None:
-        raise Exception("Could not parse serious count")
+    swiftlint_result = SwiftlintResult.from_swiftlint_output(output=output)
 
     if swiftlint_result.serious > 0:
-        raise Exception(f"{swiftlint_result.serious} serious issues found")
+        raise Exception(
+            f"{swiftlint_result.serious} serious issues found.\n{swiftlint_result.listed_errors}"
+        )
 
     print(
-        f"Swiftlint found no serious issues and found {swiftlint_result.violations} violations"
+        f"Swiftlint found no serious issues and found {swiftlint_result.violations} violations.\n{swiftlint_result.listed_warning}"
     )
 
 
 @dataclass
 class SwiftlintResult:
-    violations: Optional[int] = None
-    serious: Optional[int] = None
+    warnings: List[str]
+    errors: List[str]
+
+    @property
+    def violations(self):
+        return len(self.warnings)
+
+    @property
+    def serious(self):
+        return len(self.errors)
+
+    @property
+    def listed_warning(self):
+        return "\n".join(self.warnings)
+
+    @property
+    def listed_errors(self):
+        return "\n".join(self.errors)
 
     @staticmethod
-    def from_swiftlint_result(result: str):
-        splitted_result = result.split(" ")
-        if len(splitted_result) < 6:
-            return
+    def from_swiftlint_output(output: str):
+        output_line_by_line = output.splitlines()
 
-        violations = splitted_result[3]
-        serious = splitted_result[5]
-        try:
-            amount_of_violation_warnings = int(violations)
-            amount_of_serious_errors = int(serious)
-        except (ValueError, TypeError):
-            return
+        warnings: List[str] = []
+        errors: List[str] = []
+        for line in output_line_by_line[1:]:
+            if "Linting '" in line:
+                continue
 
-        return SwiftlintResult(
-            violations=amount_of_violation_warnings, serious=amount_of_serious_errors
-        )
+            if ": warning: " in line:
+                warnings.append(line)
+                continue
+
+            if ": error: " in line:
+                errors.append(line)
+                continue
+
+        return SwiftlintResult(warnings=warnings, errors=errors)
 
 
 main()
